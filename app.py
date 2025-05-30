@@ -1,35 +1,57 @@
 import streamlit as st
+import subprocess
+import platform
+import threading
 import pandas as pd
-import plotly.express as px
-from network_utils import ping_multiple_hosts, scan_ports_threaded
 
-st.set_page_config(page_title="Network Monitor Dashboard", layout="wide")
-st.title("Network Monitor Dashboard - Threaded Version")
+st.set_page_config(page_title="Tarmoq Ping Monitor", layout="centered")
 
-hosts_input = st.text_input("IP manzillar yoki domenlarni vergul bilan kiriting", "8.8.8.8, 1.1.1.1")
+st.title("📡 Tarmoq Qurilmalarini Ping Monitoring")
+
+# IP manzillarni kiriting
+default_hosts = "192.168.216.108, 8.8.8.8, 1.1.1.1"
+hosts_input = st.text_input("IP manzillarni vergul bilan kiriting:", default_hosts)
+
+# IP larni tayyorlash
 hosts = [h.strip() for h in hosts_input.split(",") if h.strip()]
 
-start_port, end_port = st.slider("Port diapazonini tanlang", 1, 65535, (20, 1024))
-
-if st.button("Ping va portlarni skanerlash"):
-    with st.spinner("Ping amalga oshirilmoqda..."):
-        ping_results = ping_multiple_hosts(hosts)
-    ping_df = pd.DataFrame([
-        {"Host": host, "Ping (ms)": ping_results[host]} for host in hosts
-    ])
-    st.subheader("Ping natijalari:")
-    st.dataframe(ping_df)
-
-    for host in hosts:
-        if ping_results[host] is not None:
-            st.subheader(f"{host} uchun portlar skanerlanyapti...")
-            open_ports = scan_ports_threaded(host, start_port, end_port)
-            if open_ports:
-                st.write(f"{host} ochiq portlar: {open_ports}")
-                df_ports = pd.DataFrame(open_ports, columns=["Port"])
-                fig = px.bar(df_ports, x="Port", y=[1]*len(open_ports), labels={'y':''}, title=f"{host} ochiq portlar")
-                st.plotly_chart(fig)
-            else:
-                st.info(f"{host} uchun ochiq port topilmadi.")
+# Ping funksiyasi
+def ping_host(host, results):
+    try:
+        param = '-n' if platform.system().lower() == 'windows' else '-c'
+        command = ['ping', param, '1', host]
+        output = subprocess.run(command, capture_output=True, text=True, timeout=3)
+        if "TTL=" in output.stdout or "ttl=" in output.stdout:
+            results[host] = "🟢 Online"
         else:
-            st.error(f"{host} ga ping amalga oshmadi, portlarni skanerlash o'tkazilmadi.")
+            results[host] = "🔴 No Response"
+    except subprocess.TimeoutExpired:
+        results[host] = "⏱️ Timeout"
+    except Exception as e:
+        results[host] = f"⚠️ Error"
+
+# Ko‘p IP larni parallel ping qilish
+def ping_multiple_hosts(hosts):
+    threads = []
+    results = {}
+    for host in hosts:
+        thread = threading.Thread(target=ping_host, args=(host, results))
+        thread.start()
+        threads.append(thread)
+    for thread in threads:
+        thread.join()
+    return results
+
+# Natijalarni ko‘rsatish
+if st.button("🔍 Pingni boshlash"):
+    if not hosts:
+        st.warning("Iltimos, kamida bitta IP manzil kiriting.")
+    else:
+        with st.spinner("Ping yuborilmoqda..."):
+            ping_results = ping_multiple_hosts(hosts)
+            df = pd.DataFrame([
+                {"Host": host, "Status": ping_results.get(host, "Nomaʼlum")}
+                for host in hosts
+            ])
+            st.success("Tayyor!")
+            st.dataframe(df, use_container_width=True)
