@@ -44,70 +44,68 @@ def ping_multiple_hosts_with_time(hosts):
         thread.join()
     return results
 
-# TELEGRAMGA XABAR YUBORISH FUNKSIYASI
-def send_telegram_message(bot_token, chat_id, message):
-    url = f"https://api.telegram.org/bot{bot_token}/sendMessage"
-    payload = {"chat_id": chat_id, "text": message}
-    try:
-        response = requests.post(url, data=payload)
-        if response.status_code == 200:
-            return True
-        else:
-            return False
-    except Exception as e:
-        return False
+# PING + GRAFIK tugmasi
+if st.button("📊 Ping + Grafik"):
+    with st.spinner("Ping vaqtlari o'lchanmoqda..."):
+        ping_results = ping_multiple_hosts_with_time(hosts)
+        data = [{"Host": host, "Status": status, "Ping (ms)": ping_time} for host, (status, ping_time) in ping_results.items()]
+        df = pd.DataFrame(data)
 
-# TELEGRAM TOKEN VA CHAT_ID KIRITISH
-st.sidebar.header("⚙️ Telegram sozlamalari")
-bot_token = st.sidebar.text_input("7899690264:AAH14dhEGOlvRoc4CageMH6WYROMEE5NmkY:", type="password")
-chat_id = st.sidebar.text_input("7750409176:")
+        st.dataframe(df)
 
-# PING + GRAFIK va avtomatik telegramga yuborish tugmasi
-if st.button("📊 Ping + Grafik + Telegramga yuborish"):
-    if not bot_token or not chat_id:
-        st.error("Iltimos, Telegram bot token va chat ID ni kiritng (chap panelda).")
-    else:
-        with st.spinner("Ping o‘lchanmoqda..."):
-            ping_results = ping_multiple_hosts_with_time(hosts)
-            data = [{"Host": host, "Status": status, "Ping (ms)": ping_time} for host, (status, ping_time) in ping_results.items()]
-            df = pd.DataFrame(data)
-            st.dataframe(df)
+        df_chart = df[df["Ping (ms)"].notnull()]
+        fig = px.bar(df_chart, x="Host", y="Ping (ms)", color="Ping (ms)", height=400)
+        st.plotly_chart(fig)
 
-            df_chart = df[df["Ping (ms)"].notnull()]
-            fig = px.bar(df_chart, x="Host", y="Ping (ms)", color="Ping (ms)", height=400)
-            st.plotly_chart(fig)
+# TEZ PORT SCANNER THREADING BILAN
+def scan_port_thread(host, port, open_ports):
+    with socket.socket(socket.AF_INET, socket.SOCK_STREAM) as sock:
+        sock.settimeout(0.5)
+        result = sock.connect_ex((host, port))
+        if result == 0:
+            open_ports.append(port)
 
-            # Telegram uchun xabar matni tayyorlash
-            message_lines = [f"{row['Host']}: {row['Status']} ({row['Ping (ms)']} ms)" for _, row in df.iterrows()]
-            message = "📡 Tarmoq natijalari:\n" + "\n".join(message_lines)
-
-            st.info("Telegramga natijalar yuborilmoqda...")
-            sent = send_telegram_message(bot_token, chat_id, message)
-            if sent:
-                st.success("Natijalar Telegramga yuborildi ✅")
-            else:
-                st.error("Telegramga yuborishda xatolik yuz berdi ❌")
-
-# PORT SCANNER qismi (o‘zingiz qo‘ygan kod)
-def scan_ports(host, port_range=(20, 1024)):
+def scan_ports_fast(host, port_range=(20, 1024)):
     open_ports = []
+    threads = []
     for port in range(port_range[0], port_range[1] + 1):
-        with socket.socket(socket.AF_INET, socket.SOCK_STREAM) as sock:
-            sock.settimeout(0.5)
-            result = sock.connect_ex((host, port))
-            if result == 0:
-                open_ports.append(port)
+        t = threading.Thread(target=scan_port_thread, args=(host, port, open_ports))
+        t.start()
+        threads.append(t)
+
+    for t in threads:
+        t.join()
+
+    open_ports.sort()
     return open_ports
 
 st.subheader("📍 Port Scanner")
-target_host = st.text_input("Port tekshiriladigan IP manzil:", "192.168.216.197")
+target_host = st.text_input("Port tekshiriladigan IP manzil:", "192.168.1.1")
 start_port = st.number_input("Boshlang'ich port:", 1, 65534, 20)
 end_port = st.number_input("Tugash port:", start_port+1, 65535, 1024)
 
-if st.button("🔍 Portlarni skanerlash"):
-    with st.spinner("Skanerlanmoqda..."):
-        ports = scan_ports(target_host, (start_port, end_port))
+if st.button("🔍 Tez Portlarni skanerlash"):
+    with st.spinner("Tez skanerlash boshlandi..."):
+        ports = scan_ports_fast(target_host, (start_port, end_port))
         if ports:
             st.success(f"Ochiq portlar: {ports}")
         else:
             st.warning("Hech qanday port ochiq emas.")
+
+# TELEGRAM NOTIFIKATSIYA
+def send_telegram_message(bot_token, chat_id, message):
+    url = f"https://api.telegram.org/bot{bot_token}/sendMessage"
+    payload = {"chat_id": chat_id, "text": message}
+    requests.post(url, data=payload)
+
+st.subheader("📤 Telegramga natijani yuborish")
+bot_token = st.text_input("Bot tokenni kiriting:", type="password")
+chat_id = st.text_input("Chat ID ni kiriting:")
+
+if st.button("📨 Telegramga yuborish"):
+    if bot_token and chat_id and 'df' in locals():
+        message = "\n".join([f"{row['Host']}: {row['Status']} ({row['Ping (ms)']} ms)" for _, row in df.iterrows()])
+        send_telegram_message(bot_token, chat_id, f"📡 Tarmoq natijalari:\n{message}")
+        st.success("Telegramga yuborildi ✅")
+    else:
+        st.error("Iltimos, avval ping natijalarini oling va to‘liq ma’lumot kiriting.")
