@@ -1,3 +1,9 @@
+from telegram import Bot
+
+TOKEN = "7899690264:AAH14dhEGOlvRoc4CageMH6WYROMEE5NmkY"
+bot = Bot(token=TOKEN)
+bot.delete_webhook()
+
 import asyncio
 import socket
 from telegram import Update
