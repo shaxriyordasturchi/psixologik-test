@@ -1,119 +1,136 @@
-import subprocess
-import platform
-import socket
-import threading
 from telegram import Update, InlineKeyboardButton, InlineKeyboardMarkup
-from telegram.ext import Updater, CommandHandler, CallbackContext, CallbackQueryHandler
+from telegram.ext import ApplicationBuilder, CommandHandler, CallbackQueryHandler, ContextTypes
 
-BOT_TOKEN = "7899690264:AAH14dhEGOlvRoc4CageMH6WYROMEE5NmkY"  # Bu yerga bot tokeningizni yozing
+# TCP/IP kategoriyalari va mavzular
+categories = {
+    "TCP/IP asoslari": ["IP manzillar", "Subnetting", "Routing"],
+    "Protokollar": ["TCP", "UDP", "ICMP"],
+    "Tarmoq diagnostikasi": ["Ping", "Traceroute", "Netstat"],
+}
 
-# Ping funksiyasi
-def ping_host(host):
-    param = "-n" if platform.system().lower() == "windows" else "-c"
-    command = ["ping", param, "1", host]
-    try:
-        output = subprocess.run(command, capture_output=True, text=True, timeout=3)
-        if "ttl=" in output.stdout.lower():
-            # Ping vaqtini qidiring (Windows va Linux uchun farq bo'lishi mumkin)
-            import re
-            times = re.findall(r'time[=<]([\d\.]+) ?ms', output.stdout.lower())
-            if times:
-                return f"Online, ping: {times[0]} ms"
-            else:
-                return "Online, ping vaqti aniqlanmadi"
-        else:
-            return "No Response"
-    except subprocess.TimeoutExpired:
-        return "Timeout"
-    except Exception as e:
-        return f"Error: {str(e)}"
+# Har bir mavzu haqida qisqacha ma'lumot
+topic_info = {
+    "IP manzillar": "IP manzillar tarmoq qurilmalarini identifikatsiya qiladi. IPv4 va IPv6 mavjud.",
+    "Subnetting": "Subnetting – tarmoqni kichik qismlarga bo‘lish, boshqarishni osonlashtiradi.",
+    "Routing": "Routing – paketlarni manzilga yo‘naltirish jarayoni, marshrutlash protokollari yordamida.",
+    "TCP": "TCP – ishonchli, ketma-ket ma’lumot uzatish protokoli.",
+    "UDP": "UDP – bog‘lanishsiz, tezkor, ammo ishonchliligi kafolatlanmagan protokol.",
+    "ICMP": "ICMP – tarmoq muammolarini aniqlash uchun ishlatiladi.",
+    "Ping": "Ping – tarmoq qurilmasining mavjudligini tekshirish uchun utilita.",
+    "Traceroute": "Traceroute – paketlar tarmoq bo‘ylab qanday yo‘l tutishini ko‘rsatadi.",
+    "Netstat": "Netstat – faol tarmoq ulanishlari va portlar haqida ma’lumot beradi.",
+}
 
-# Port scanning (tezkor versiya)
-def scan_ports(host, start_port=20, end_port=1024):
-    open_ports = []
-    def scan_port(port):
-        try:
-            sock = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
-            sock.settimeout(0.3)
-            result = sock.connect_ex((host, port))
-            if result == 0:
-                open_ports.append(port)
-            sock.close()
-        except:
-            pass
-
-    threads = []
-    for port in range(start_port, end_port + 1):
-        t = threading.Thread(target=scan_port, args=(port,))
-        t.start()
-        threads.append(t)
-    for t in threads:
-        t.join()
-    return sorted(open_ports)
-
-# Start komandasi uchun menyu
-def start(update: Update, context: CallbackContext):
-    keyboard = [
-        [InlineKeyboardButton("Ping IP", callback_data='ping')],
-        [InlineKeyboardButton("Port Scanner", callback_data='portscan')]
-    ]
+async def start(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    keyboard = [[InlineKeyboardButton(cat, callback_data=f"cat_{cat}")] for cat in categories]
     reply_markup = InlineKeyboardMarkup(keyboard)
-    update.message.reply_text('Salom! Tarmoq monitoring botiga xush kelibsiz.\n\nQuyidagilardan birini tanlang:', reply_markup=reply_markup)
+    await update.message.reply_text("TCP/IP bo'yicha kategoriyalarni tanlang:", reply_markup=reply_markup)
 
-# Callback query uchun handler
-def button(update: Update, context: CallbackContext):
+async def button_handler(update: Update, context: ContextTypes.DEFAULT_TYPE):
     query = update.callback_query
-    query.answer()
+    await query.answer()
+    data = query.data
 
-    if query.data == "ping":
-        query.edit_message_text("Ping qilish uchun IP manzil kiriting (masalan, 8.8.8.8):")
-        context.user_data['action'] = 'ping'
+    if data.startswith("cat_"):
+        category = data[4:]
+        topics = categories.get(category, [])
+        keyboard = [[InlineKeyboardButton(topic, callback_data=f"topic_{topic}")] for topic in topics]
+        keyboard.append([InlineKeyboardButton("Ortga", callback_data="back_to_cats")])
+        reply_markup = InlineKeyboardMarkup(keyboard)
+        await query.edit_message_text(text=f"{category} bo'yicha mavzular:", reply_markup=reply_markup)
 
-    elif query.data == "portscan":
-        query.edit_message_text("Portlarni skanerlash uchun IP manzil kiriting:")
-        context.user_data['action'] = 'portscan'
+    elif data == "back_to_cats":
+        keyboard = [[InlineKeyboardButton(cat, callback_data=f"cat_{cat}")] for cat in categories]
+        reply_markup = InlineKeyboardMarkup(keyboard)
+        await query.edit_message_text(text="TCP/IP bo'yicha kategoriyalarni tanlang:", reply_markup=reply_markup)
 
-# Matnli xabarlarni qabul qilish
-def handle_message(update: Update, context: CallbackContext):
-    user_action = context.user_data.get('action')
-    text = update.message.text.strip()
-
-    if user_action == 'ping':
-        update.message.reply_text(f"{text} ga ping qilinmoqda...")
-        result = ping_host(text)
-        update.message.reply_text(f"Natija: {result}")
-        context.user_data['action'] = None
-
-    elif user_action == 'portscan':
-        update.message.reply_text(f"{text} manzili bo‘yicha portlarni 20-1024 oralig‘ida skanerlash boshlanmoqda...")
-        ports = scan_ports(text, 20, 1024)
-        if ports:
-            ports_str = ', '.join(str(p) for p in ports)
-            update.message.reply_text(f"Ochiq portlar: {ports_str}")
-        else:
-            update.message.reply_text("Hech qanday ochiq port topilmadi.")
-        context.user_data['action'] = None
-
-    else:
-        update.message.reply_text("Iltimos, boshida /start ni bosing va menyudan birini tanlang.")
+    elif data.startswith("topic_"):
+        topic = data[6:]
+        info = topic_info.get(topic, "Kechirasiz, bu mavzu bo'yicha ma'lumot mavjud emas.")
+        keyboard = [[InlineKeyboardButton("Ortga", callback_data="back_to_cats")]]
+        reply_markup = InlineKeyboardMarkup(keyboard)
+        await query.edit_message_text(text=f"{topic} haqida:\n\n{info}", reply_markup=reply_markup)
 
 def main():
-    updater = Updater(BOT_TOKEN)
-    dp = updater.dispatcher
+    token = "YOUR_BOT_TOKEN_HERE"  # Bu yerga bot tokeningizni yozing
+    app = ApplicationBuilder().token(token).build()
 
-    dp.add_handler(CommandHandler("start", start))
-    dp.add_handler(CallbackQueryHandler(button))
-    dp.add_handler(CommandHandler("help", start))
-    dp.add_handler(CommandHandler("ping", start))
-    dp.add_handler(CommandHandler("portscan", start))
-    dp.add_handler(CommandHandler("menu", start))
+    app.add_handler(CommandHandler("start", start))
+    app.add_handler(CallbackQueryHandler(button_handler))
+from telegram import Update, InlineKeyboardButton, InlineKeyboardMarkup
+from telegram.ext import ApplicationBuilder, CommandHandler, CallbackQueryHandler, ContextTypes
 
-    dp.add_handler(MessageHandler(lambda u, c: True, handle_message))
+# TCP/IP kategoriyalari va mavzular
+CATEGORIES = {
+    "TCP/IP asoslari": ["IP manzillar", "Subnetting", "Routing"],
+    "Protokollar": ["TCP", "UDP", "ICMP"],
+    "Tarmoq diagnostikasi": ["Ping", "Traceroute", "Netstat"],
+}
+
+# Har bir mavzu haqida qisqacha ma'lumot
+TOPIC_INFO = {
+    "IP manzillar": "IP manzillar qurilmalarni tarmoqda identifikatsiya qiladi. IPv4 va IPv6 turlari mavjud.",
+    "Subnetting": "Subnetting tarmoqni kichik segmentlarga bo‘lish uchun ishlatiladi.",
+    "Routing": "Routing paketlarni tarmoq bo‘ylab kerakli manzilga yo‘naltirish jarayonidir.",
+    "TCP": "TCP ishonchli, ketma-ket ma'lumot uzatishni ta'minlaydigan protokol.",
+    "UDP": "UDP bog‘lanishsiz va tezkor ma'lumot uzatish protokoli.",
+    "ICMP": "ICMP tarmoq holatini tekshirish va xatoliklarni bildirish uchun ishlatiladi.",
+    "Ping": "Ping qurilmaning tarmoqda mavjudligini tekshiradi.",
+    "Traceroute": "Traceroute paketlar tarmoqda qaysi yo‘lni bosib o‘tishini ko‘rsatadi.",
+    "Netstat": "Netstat faol tarmoq ulanishlari va portlarni ko‘rsatadi.",
+}
+
+async def start(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    keyboard = [
+        [InlineKeyboardButton(cat, callback_data=f"cat_{cat}")] for cat in CATEGORIES
+    ]
+    reply_markup = InlineKeyboardMarkup(keyboard)
+    await update.message.reply_text("TCP/IP kategoriyalarini tanlang:", reply_markup=reply_markup)
+
+async def button_handler(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    query = update.callback_query
+    await query.answer()
+    data = query.data
+
+    if data.startswith("cat_"):
+        category = data[4:]
+        topics = CATEGORIES.get(category, [])
+        keyboard = [
+            [InlineKeyboardButton(topic, callback_data=f"topic_{topic}")] for topic in topics
+        ]
+        keyboard.append([InlineKeyboardButton("Ortga", callback_data="back")])
+        reply_markup = InlineKeyboardMarkup(keyboard)
+        await query.edit_message_text(f"{category} mavzulari:", reply_markup=reply_markup)
+
+    elif data.startswith("topic_"):
+        topic = data[6:]
+        info = TOPIC_INFO.get(topic, "Bu mavzu haqida ma'lumot topilmadi.")
+        keyboard = [[InlineKeyboardButton("Ortga", callback_data="back")]]
+        reply_markup = InlineKeyboardMarkup(keyboard)
+        await query.edit_message_text(f"{topic} haqida:\n\n{info}", reply_markup=reply_markup)
+
+    elif data == "back":
+        keyboard = [
+            [InlineKeyboardButton(cat, callback_data=f"cat_{cat}")] for cat in CATEGORIES
+        ]
+        reply_markup = InlineKeyboardMarkup(keyboard)
+        await query.edit_message_text("TCP/IP kategoriyalarini tanlang:", reply_markup=reply_markup)
+
+def main():
+    TOKEN = "7899690264:AAH14dhEGOlvRoc4CageMH6WYROMEE5NmkY"  # Bot tokeningizni shu yerga yozing
+    app = ApplicationBuilder().token(TOKEN).build()
+
+    app.add_handler(CommandHandler("start", start))
+    app.add_handler(CallbackQueryHandler(button_handler))
 
     print("Bot ishga tushdi...")
-    updater.start_polling()
-    updater.idle()
+    app.run_polling()
 
-if __name__ == '__main__':
-    from telegram.ext import MessageHandler, Filters
+if __name__ == "__main__":
+    main()
+
+    print("Bot ishga tushdi...")
+    app.run_polling()
+
+if __name__ == "__main__":
     main()
