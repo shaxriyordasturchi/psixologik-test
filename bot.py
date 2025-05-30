@@ -54,7 +54,7 @@ async def handle_message(update: Update, context: ContextTypes.DEFAULT_TYPE):
 
 # Asosiy funksiya, botni ishga tushiradi
 def main():
-    TOKEN = "7899690264:AAH14dhEGOlvRoc4CageMH6WYROMEE5NmkY"
+    TOKEN = "8115968693:AAHj-zIyaHnpmeLlK8vYWtDWaoMjqO3Lg-Y"
 
     app = ApplicationBuilder().token(TOKEN).build()
 
