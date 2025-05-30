@@ -12,7 +12,7 @@ st.set_page_config(page_title="Network Monitor", layout="wide")
 st.title("📡 Tarmoq Monitoring Dashbordi")
 
 # IP manzillar ro'yxatini olish
-ip_input = st.text_area("IP manzillarni kiriting (har biri yangi qatorda):", "192.168.1.1\n192.168.1.2")
+ip_input = st.text_area("IP manzillarni kiriting (har biri yangi qatorda):", "192.168.216.108\n192.168.1.2")
 hosts = [ip.strip() for ip in ip_input.split("\n") if ip.strip()]
 
 # PING funksiyasi
