@@ -11,8 +11,12 @@ import requests
 st.set_page_config(page_title="Network Monitor", layout="wide")
 st.title("📡 Tarmoq Monitoring Dashbordi")
 
+# Telegram bot token va chat_id ni shu yerga kiriting
+BOT_TOKEN = "7899690264:AAH14dhEGOlvRoc4CageMH6WYROMEE5NmkY"
+CHAT_ID = "7750409176"
+
 # IP manzillar ro'yxatini olish
-ip_input = st.text_area("IP manzillarni kiriting (har biri yangi qatorda):", "192.168.216.197")
+ip_input = st.text_area("IP manzillarni kiriting (har biri yangi qatorda):", "192.168.216.197\n192.168.1.2")
 hosts = [ip.strip() for ip in ip_input.split("\n") if ip.strip()]
 
 # PING funksiyasi
@@ -99,13 +103,11 @@ def send_telegram_message(bot_token, chat_id, message):
     requests.post(url, data=payload)
 
 st.subheader("📤 Telegramga natijani yuborish")
-bot_token = st.text_input("Bot tokenni kiriting:", type="password")
-chat_id = st.text_input("Chat ID ni kiriting:")
 
 if st.button("📨 Telegramga yuborish"):
-    if bot_token and chat_id and 'df' in locals():
+    if 'df' in locals():
         message = "\n".join([f"{row['Host']}: {row['Status']} ({row['Ping (ms)']} ms)" for _, row in df.iterrows()])
-        send_telegram_message(bot_token, chat_id, f"📡 Tarmoq natijalari:\n{message}")
+        send_telegram_message(BOT_TOKEN, CHAT_ID, f"📡 Tarmoq natijalari:\n{message}")
         st.success("Telegramga yuborildi ✅")
     else:
-        st.error("Iltimos, avval ping natijalarini oling va to‘liq ma’lumot kiriting.")
+        st.error("Iltimos, avval ping natijalarini oling.")
